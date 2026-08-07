@@ -20,6 +20,54 @@ def init_connection():
 
 supabase = init_connection()
 
+# --- AUTHENTICATION STATE ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+def login(email, password):
+    try:
+        supabase.auth.sign_in_with_password({"email": email, "password": password})
+        st.session_state.authenticated = True
+        st.rerun()
+    except Exception as e:
+        st.error("Invalid email or password.")
+
+def signup(email, password):
+    try:
+        supabase.auth.sign_up({"email": email, "password": password})
+        st.success("Account created! You can now log in.")
+    except Exception as e:
+        st.error(f"Error creating account: {e}")
+
+def logout():
+    supabase.auth.sign_out()
+    st.session_state.authenticated = False
+    st.rerun()
+
+# --- LOGIN / SIGNUP GATE ---
+if not st.session_state.authenticated:
+    st.title("Financial OS")
+    st.write("Please log in or create an account to access your ledger.")
+    
+    tab1, tab2 = st.tabs(["Log In", "Sign Up"])
+    
+    with tab1:
+        login_email = st.text_input("Email", key="login_email")
+        login_password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Log In"):
+            login(login_email, login_password)
+            
+    with tab2:
+        signup_email = st.text_input("Email", key="signup_email")
+        signup_password = st.text_input("Password", type="password", key="signup_password")
+        if st.button("Sign Up"):
+            signup(signup_email, signup_password)
+            
+    # This stops the rest of the app from running if they aren't logged in
+    st.stop()
+
+# --- MAIN APP LOGIC (Only runs if authenticated) ---
+
 def insert_transaction(t_date, t_type, t_category, t_amount, t_desc):
     supabase.table("transactions").insert({
         "date": t_date,
@@ -31,7 +79,6 @@ def insert_transaction(t_date, t_type, t_category, t_amount, t_desc):
 
 def fetch_all_transactions():
     response = supabase.table("transactions").select("*").order("date", desc=True).order("id", desc=True).execute()
-    # Convert response data directly to a Pandas DataFrame
     df = pd.DataFrame(response.data)
     return df
 
@@ -44,10 +91,11 @@ menu = st.sidebar.radio(
     "Go to", 
     ["Dashboard (Overview)", "Ledger Entry", "Advanced Analytics", "Data Export"]
 )
+st.sidebar.divider()
+st.sidebar.button("Log Out", on_click=logout)
 
 # --- LOAD DATA ---
 df = fetch_all_transactions()
-# Ensure 'amount' is treated as a float in pandas just in case
 if not df.empty:
     df['amount'] = df['amount'].astype(float)
 
@@ -79,7 +127,6 @@ if menu == "Ledger Entry":
             
     st.subheader("Recent Ledger Entries")
     if not df.empty:
-        # Display everything except the database ID for a cleaner look
         display_df = df.drop(columns=['id']) if 'id' in df.columns else df
         st.dataframe(display_df, use_container_width=True)
         
